@@ -1,0 +1,69 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hiapi"
+description = "Zero-dependency Python client for the HiAPI unified async task API (/v1/tasks)."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "HiAPI", email = "support@hiapi.ai" }]
+keywords = ["hiapi", "ai", "video generation", "image generation", "sdk", "async"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Typing :: Typed",
+]
+# Zero runtime dependencies — standard library only.
+dependencies = []
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://hiapi.ai"
+Documentation = "https://docs.hiapi.ai"
+Source = "https://github.com/HiAPIAI/hiapi-python"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7",
+    "mypy>=1.0",
+    "ruff>=0.1",
+]
+
+[tool.hatch.version]
+path = "src/hiapi/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hiapi"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/hiapi", "README.md", "LICENSE"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.pyupgrade]
+# Library supports Python 3.8 at runtime — keep typing.List/Optional rather than
+# forcing PEP 585/604 syntax that only reads cleanly on newer interpreters.
+keep-runtime-typing = true
+
+[tool.mypy]
+# Type-check target (runtime still supports 3.8; recent mypy only targets >=3.10).
+python_version = "3.10"
+strict = true
+files = ["src/hiapi"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
