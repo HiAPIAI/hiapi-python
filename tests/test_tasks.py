@@ -46,12 +46,13 @@ def test_create_with_callback_includes_callback(client, server):
     assert body["callback"] == {"url": "https://e.com/cb", "when": "final"}
 
 
-def test_retrieve_parses_camelcase(client, server):
+def test_retrieve_parses_detail_fields(client, server):
     server.set_responder(
         lambda *a: detail(
             "success",
-            createdAt=1777800499,
-            updatedAt=1777800799,
+            created=1777800499,
+            completed=1777800799,
+            storage="temp",
             output=[{"url": "https://cdn/x.mp4", "type": "video", "expireAt": 1777887199}],
         )
     )
@@ -60,6 +61,8 @@ def test_retrieve_parses_camelcase(client, server):
     assert task.status == "success"
     assert task.succeeded and task.is_terminal
     assert task.created_at == 1777800499
+    assert task.completed_at == 1777800799
+    assert task.storage == "temp"
     assert task.output[0].url == "https://cdn/x.mp4"
     assert task.output[0].type == "video"
     assert task.output[0].expire_at == 1777887199
@@ -70,7 +73,7 @@ def test_list_parses_page(client, server):
         "code": 200,
         "message": "success",
         "data": {
-            "items": [{"taskId": "tk-1", "model": "m", "status": "success"}],
+            "tasks": [{"taskId": "tk-1", "model": "m", "status": "success"}],
             "page": 2,
             "size": 20,
             "total": 41,
