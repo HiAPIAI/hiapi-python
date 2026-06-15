@@ -4,7 +4,7 @@ Zero-dependency Python client for the [HiAPI](https://hiapi.ai) **unified async 
 
 - **Zero runtime dependencies.** Standard library only (`urllib`, `json`, `hmac`).
 - **One-call workflow.** `client.tasks.run(...)` submits and waits for you.
-- **Typed.** Dataclasses, `Literal` statuses, ships `py.typed`.
+- **Typed.** Dataclasses throughout, ships `py.typed`.
 - **Webhook verification.** HMAC-SHA256 signature + replay check, built in.
 
 > For OpenAI-compatible chat/image endpoints, keep using the `openai` library with
@@ -95,13 +95,17 @@ Callbacks are delivered **at least once** — deduplicate by `task.task_id`.
 | `ModelUnavailableError` | `MODEL_UNAVAILABLE` — retry or switch model |
 | `TaskTimeoutError` / `StorageUnavailableError` | retryable upstream errors |
 | `ServiceUnavailableError` | 503 — platform busy (auto-retried) |
-| `APIConnectionError` | network failure (auto-retried) |
+| `APIConnectionError` | network failure (auto-retried for reads only — **not** `create()`) |
 | `TaskFailed` | a polled task ended in `status=fail` |
 | `PollTimeout` | `run()`/`wait()` exceeded its timeout |
 | `WebhookVerificationError` | bad signature or stale timestamp |
 
-429/503 and network errors are retried automatically with exponential backoff
-(`max_retries`, default 2; honours `Retry-After`).
+429/503 are retried automatically with exponential backoff (`max_retries`, default 2;
+honours `Retry-After`). Network errors are retried **only for idempotent GETs**
+(`retrieve` / `list`, and the polling inside `wait` / `run`). The `POST` that `create()`
+issues is **never** retried on a network failure, so a dropped connection can't silently
+create a second, double-charged task — if `create()` raises `APIConnectionError`, confirm
+with `list()` before retrying.
 
 ## Configuration
 

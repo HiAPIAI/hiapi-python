@@ -54,9 +54,12 @@ class Task:
 
     task_id: str
     model: str
+    # Kept as ``str`` (not the ``TaskStatus`` literal above) on purpose: a status
+    # the server adds later must still parse rather than break an older SDK.
     status: str
     created_at: Optional[int] = None
-    updated_at: Optional[int] = None
+    completed_at: Optional[int] = None
+    storage: Optional[str] = None
     output: List[Output] = field(default_factory=list)
     error: Optional[TaskError] = None
     raw: Dict[str, Any] = field(default_factory=dict, repr=False)
@@ -75,12 +78,16 @@ class Task:
             Output.from_dict(o) for o in (d.get("output") or []) if isinstance(o, dict)
         ]
         err = d.get("error")
+        # The API sends `completed: 0` (not omitted) while a task is non-terminal;
+        # normalize that sentinel to None so callers don't read it as epoch 0.
+        completed = d.get("completed")
         return cls(
             task_id=d.get("taskId", ""),
             model=d.get("model", ""),
             status=d.get("status", ""),
-            created_at=d.get("createdAt"),
-            updated_at=d.get("updatedAt"),
+            created_at=d.get("created"),
+            completed_at=completed or None,
+            storage=d.get("storage"),
             output=output,
             error=TaskError.from_dict(err) if isinstance(err, dict) else None,
             raw=d,
@@ -112,9 +119,10 @@ class TaskPage:
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> TaskPage:
         raw_items = None
-        # Accept the documented "items" plus common alternates so a paginated
-        # list never silently parses to empty; the full payload is kept in raw.
-        for key in ("items", "tasks", "list", "data", "records"):
+        # The API returns the page array under "tasks"; accept common alternates
+        # too so a paginated list never silently parses to empty. The full
+        # payload is kept in raw.
+        for key in ("tasks", "items", "list", "data", "records"):
             value = d.get(key)
             if isinstance(value, list):
                 raw_items = value

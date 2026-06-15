@@ -19,8 +19,9 @@ DETAIL_SUCCESS = {
         "taskId": "tk-hiapi-abc123",
         "model": "seedance-2-0",
         "status": "success",
-        "createdAt": 1777800499,
-        "updatedAt": 1777800799,
+        "created": 1777800499,
+        "completed": 1777800799,
+        "storage": "temp",
         "output": [
             {"url": "https://cdn.hiapi.ai/tasks/tk-hiapi-abc123/0.mp4",
              "type": "video", "expireAt": 1777887199}
@@ -52,11 +53,22 @@ def test_detail_success_contract():
     assert task.is_terminal and task.succeeded
     assert task.model == "seedance-2-0"
     assert task.created_at == 1777800499
-    assert task.updated_at == 1777800799
+    assert task.completed_at == 1777800799
+    assert task.storage == "temp"
     out = task.output[0]
     assert out.type == "video"
     assert out.url.endswith("0.mp4")
     assert out.expire_at == 1777887199
+
+
+def test_non_terminal_completed_zero_is_none():
+    # The API returns `completed: 0` while a task has not finished; the SDK
+    # surfaces that as None rather than the epoch-0 timestamp.
+    task = Task.from_dict(
+        {"taskId": "t", "model": "m", "status": "handling", "created": 1777800499, "completed": 0}
+    )
+    assert task.created_at == 1777800499
+    assert task.completed_at is None
 
 
 def test_detail_fail_contract():
