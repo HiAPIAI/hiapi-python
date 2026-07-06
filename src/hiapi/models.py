@@ -60,6 +60,9 @@ class Task:
     created_at: Optional[int] = None
     completed_at: Optional[int] = None
     storage: Optional[str] = None
+    # Echoed only when the task was submitted with an explicit ``route``
+    # parameter; ``model`` then holds the resolved full name (``base@route``).
+    route: Optional[str] = None
     output: List[Output] = field(default_factory=list)
     error: Optional[TaskError] = None
     raw: Dict[str, Any] = field(default_factory=dict, repr=False)
@@ -88,6 +91,7 @@ class Task:
             created_at=d.get("created"),
             completed_at=completed or None,
             storage=d.get("storage"),
+            route=d.get("route"),
             output=output,
             error=TaskError.from_dict(err) if isinstance(err, dict) else None,
             raw=d,
@@ -99,11 +103,15 @@ class CreatedTask:
     """The thin response of ``POST /v1/tasks`` — just the new task id."""
 
     task_id: str
+    # True when the server answered from the idempotency cache (the request
+    # carried an ``Idempotency-Key`` it had already fulfilled): ``task_id`` is
+    # the task created by the first request, and no new task was created.
+    idempotent_replay: bool = False
     raw: Dict[str, Any] = field(default_factory=dict, repr=False)
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> CreatedTask:
-        return cls(task_id=d.get("taskId", ""), raw=d)
+    def from_dict(cls, d: Dict[str, Any], *, idempotent_replay: bool = False) -> CreatedTask:
+        return cls(task_id=d.get("taskId", ""), idempotent_replay=idempotent_replay, raw=d)
 
 
 @dataclass

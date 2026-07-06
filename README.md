@@ -59,6 +59,46 @@ page = client.tasks.list(page=1, size=20)       # newest first
 [model page](https://docs.hiapi.ai/models/). Don't put callback fields inside
 `input`; pass `callback` separately.
 
+## Model routes
+
+Some models expose multiple routes (e.g. `pro`, `ext`) with different pricing or
+upstream capacity. Pass `route` instead of writing the `model@route` suffix:
+
+```python
+created = client.tasks.create(
+    model="gpt-image-2/text-to-image",
+    route="pro",                        # preferred over model="...@pro"
+    input={"prompt": "..."},
+)
+```
+
+Omitting `route` (or passing `"default"`) uses the model's default route. An
+unknown route fails fast with a 400 whose message lists the available routes.
+The legacy `model="x@pro"` spelling keeps working. When a task was submitted
+with `route`, its detail echoes `task.route` and `task.model` holds the
+resolved full name (`x@pro`).
+
+## Idempotent retries
+
+Pass `idempotency_key` (sent as the `Idempotency-Key` header, ≤255 bytes) to
+make task submission safe to retry — same key + same body always returns the
+first task instead of creating and billing a new one:
+
+```python
+created = client.tasks.create(
+    model="seedance-2-0",
+    input={"prompt": "..."},
+    idempotency_key="order-8472:video",   # a stable key you derive per job
+)
+if created.idempotent_replay:
+    print("hit the idempotency cache; no new task created")
+```
+
+With a key set, the SDK also retries the POST on network errors and
+automatically waits out `409 IDEMPOTENCY_KEY_PROCESSING` (the first request is
+still in flight). Reusing a key with a **different** body raises
+`IdempotencyKeyMismatchError` — that's a key-construction bug, not retryable.
+
 ## Webhooks
 
 If you set a **Webhook signing key** in the HiAPI console, terminal callbacks are
@@ -95,7 +135,9 @@ Callbacks are delivered **at least once** — deduplicate by `task.task_id`.
 | `ModelUnavailableError` | `MODEL_UNAVAILABLE` — retry or switch model |
 | `TaskTimeoutError` / `StorageUnavailableError` | retryable upstream errors |
 | `ServiceUnavailableError` | 503 — platform busy (auto-retried) |
-| `APIConnectionError` | network failure (auto-retried for reads only — **not** `create()`) |
+| `IdempotencyKeyProcessingError` | 409 — same key still in flight (auto-retried; retryable) |
+| `IdempotencyKeyMismatchError` | 422 — key reused with a different body (**not** retryable) |
+| `APIConnectionError` | network failure (auto-retried for reads only — **not** a keyless `create()`) |
 | `TaskFailed` | a polled task ended in `status=fail` |
 | `PollTimeout` | `run()`/`wait()` exceeded its timeout |
 | `WebhookVerificationError` | bad signature or stale timestamp |
@@ -103,9 +145,10 @@ Callbacks are delivered **at least once** — deduplicate by `task.task_id`.
 429/503 are retried automatically with exponential backoff (`max_retries`, default 2;
 honours `Retry-After`). Network errors are retried **only for idempotent GETs**
 (`retrieve` / `list`, and the polling inside `wait` / `run`). The `POST` that `create()`
-issues is **never** retried on a network failure, so a dropped connection can't silently
-create a second, double-charged task — if `create()` raises `APIConnectionError`, confirm
-with `list()` before retrying.
+issues is **never** retried on a network failure — unless you pass
+`idempotency_key`, which makes the retry safe server-side. Without a key, a dropped
+connection can't silently create a second, double-charged task — if `create()` raises
+`APIConnectionError`, confirm with `list()` before retrying.
 
 ## Configuration
 

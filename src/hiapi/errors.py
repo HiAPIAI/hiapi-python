@@ -9,7 +9,9 @@
     │   ├── ModelUnavailableError  error_code=MODEL_UNAVAILABLE
     │   ├── TaskFailedError        error_code=TASK_FAILED (synchronous rejection)
     │   ├── TaskTimeoutError       error_code=TASK_TIMEOUT
-    │   └── StorageUnavailableError error_code=STORAGE_UNAVAILABLE
+    │   ├── StorageUnavailableError error_code=STORAGE_UNAVAILABLE
+    │   ├── IdempotencyKeyProcessingError 409 — first request in flight; retryable
+    │   └── IdempotencyKeyMismatchError   422 — key reused with a different body
     ├── APIConnectionError         network failure / DNS / connection reset
     ├── TaskFailed                 a polled task reached terminal status=fail
     ├── PollTimeout                run()/wait() exceeded the client-side timeout
@@ -82,6 +84,20 @@ class StorageUnavailableError(APIError):
     """error_code=STORAGE_UNAVAILABLE — output storage error; retryable."""
 
 
+class IdempotencyKeyProcessingError(APIError):
+    """error_code=IDEMPOTENCY_KEY_PROCESSING (409) — the first request with this
+    ``Idempotency-Key`` is still in flight. Retryable: wait ``Retry-After``
+    seconds and resend the identical request; it will replay the original
+    task once created. The transport already retries this automatically up to
+    ``max_retries`` before letting it surface."""
+
+
+class IdempotencyKeyMismatchError(APIError):
+    """error_code=IDEMPOTENCY_KEY_MISMATCH (422) — this ``Idempotency-Key`` was
+    already used with a different request body. Not retryable: the key
+    construction is buggy (two distinct requests derived the same key)."""
+
+
 class APIConnectionError(HiAPIError):
     """A network-level failure prevented the request from completing."""
 
@@ -133,6 +149,8 @@ ERROR_CODE_TO_CLASS = {
     "TASK_FAILED": TaskFailedError,
     "TASK_TIMEOUT": TaskTimeoutError,
     "STORAGE_UNAVAILABLE": StorageUnavailableError,
+    "IDEMPOTENCY_KEY_PROCESSING": IdempotencyKeyProcessingError,
+    "IDEMPOTENCY_KEY_MISMATCH": IdempotencyKeyMismatchError,
 }
 
 # Falls back to a status-based class when no (recognized) error_code is present.

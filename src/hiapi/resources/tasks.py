@@ -28,18 +28,40 @@ class Tasks:
         model: str,
         input: Dict[str, Any],
         callback: Optional[Dict[str, Any]] = None,
+        route: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
     ) -> CreatedTask:
         """Submit a task and return immediately with its ``task_id``.
 
         ``input`` holds the model's business parameters (fields vary per model).
         Do not put callback/webhook fields inside ``input`` — pass ``callback``
         (``{"url": ..., "when": "final"}``) separately or the request is rejected.
+
+        ``route`` selects a model route (e.g. ``"pro"``) without writing the
+        ``model@route`` suffix form: ``model="x", route="pro"`` is the preferred
+        spelling of ``model="x@pro"``. Omitted/``"default"`` both mean the
+        default route. An unknown route is rejected with a 400 listing the
+        available routes.
+
+        ``idempotency_key`` (sent as the ``Idempotency-Key`` header, at most 255
+        bytes) makes retries safe: resending the same key + body returns the
+        original task (``CreatedTask.idempotent_replay`` is then ``True``)
+        instead of creating and billing a second one. The transport also
+        becomes willing to retry this POST on network errors. Reusing a key
+        with a *different* body raises
+        :class:`~hiapi.errors.IdempotencyKeyMismatchError`.
         """
         body: Dict[str, Any] = {"model": model, "input": input}
+        if route is not None:
+            body["route"] = route
         if callback is not None:
             body["callback"] = callback
-        env = self._client._request("POST", "/tasks", body=body)
-        return CreatedTask.from_dict(_data(env))
+        extra_headers = {"Idempotency-Key": idempotency_key} if idempotency_key else None
+        env, resp_headers = self._client._request_with_headers(
+            "POST", "/tasks", body=body, extra_headers=extra_headers
+        )
+        replay = resp_headers.get("idempotent-replay", "").lower() == "true"
+        return CreatedTask.from_dict(_data(env), idempotent_replay=replay)
 
     def retrieve(self, task_id: str) -> Task:
         """Fetch a task's current status and (when ``success``) its output."""
@@ -98,6 +120,8 @@ class Tasks:
         model: str,
         input: Dict[str, Any],
         callback: Optional[Dict[str, Any]] = None,
+        route: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_TIMEOUT,
         on_update: Optional[OnUpdate] = None,
@@ -106,8 +130,15 @@ class Tasks:
 
         Equivalent to :meth:`create` followed by :meth:`wait`. ``callback`` is
         optional and independent of polling; set it if you also want a webhook.
+        ``route`` and ``idempotency_key`` are forwarded to :meth:`create`.
         """
-        created = self.create(model=model, input=input, callback=callback)
+        created = self.create(
+            model=model,
+            input=input,
+            callback=callback,
+            route=route,
+            idempotency_key=idempotency_key,
+        )
         return self.wait(
             created.task_id,
             poll_interval=poll_interval,

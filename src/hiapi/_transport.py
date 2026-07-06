@@ -12,7 +12,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from ._version import __version__
 from .errors import (
@@ -28,8 +28,14 @@ from .errors import (
 RETRY_STATUSES = frozenset({429, 503})
 # Methods safe to retry after a network error, where the outcome is unknown.
 # A POST /tasks must NOT be retried on a network error — it might have created a
-# task the SDK never saw the response for, double-charging the account.
+# task the SDK never saw the response for, double-charging the account. The
+# exception: a request carrying an Idempotency-Key header IS safe to retry (the
+# server collapses duplicates into the first task).
 IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "PUT", "DELETE"})
+IDEMPOTENCY_KEY_HEADER = "Idempotency-Key"
+# error_code of the retryable 409 the server returns while the first request
+# with the same Idempotency-Key is still in flight (honours Retry-After).
+IDEMPOTENCY_PROCESSING_CODE = "IDEMPOTENCY_KEY_PROCESSING"
 _MAX_BACKOFF = 8.0
 _MAX_RETRY_AFTER = 60.0
 
@@ -60,11 +66,30 @@ class Transport:
         *,
         body: Optional[Dict[str, Any]] = None,
         params: Optional[Dict[str, Any]] = None,
+        extra_headers: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """Perform a request and return the parsed JSON envelope (a dict).
 
         Raises an :class:`~hiapi.errors.APIError` subclass on non-2xx responses
         and :class:`~hiapi.errors.APIConnectionError` on network failure.
+        """
+        env, _ = self.request_with_headers(
+            method, path, body=body, params=params, extra_headers=extra_headers
+        )
+        return env
+
+    def request_with_headers(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: Optional[Dict[str, Any]] = None,
+        params: Optional[Dict[str, Any]] = None,
+        extra_headers: Optional[Dict[str, str]] = None,
+    ) -> Tuple[Dict[str, Any], Dict[str, str]]:
+        """Like :meth:`request`, but also returns the response headers.
+
+        The header dict is lower-cased so lookups are case-insensitive.
         """
         url = self._build_url(path, params)
         data = json.dumps(body).encode("utf-8") if body is not None else None
@@ -75,13 +100,21 @@ class Transport:
         }
         if data is not None:
             headers["Content-Type"] = "application/json"
+        if extra_headers:
+            headers.update(extra_headers)
+        # An Idempotency-Key makes the POST safe to retry: the server collapses
+        # duplicates of the same key+body into the first task.
+        has_idempotency_key = bool(extra_headers and extra_headers.get(IDEMPOTENCY_KEY_HEADER))
 
         attempt = 0
         while True:
             req = urllib.request.Request(url, data=data, headers=headers, method=method)
             try:
                 with self._opener.open(req, timeout=self.timeout) as resp:
-                    return _decode_json(resp.read(), resp.status)
+                    return (
+                        _decode_json(resp.read(), resp.status),
+                        {k.lower(): v for k, v in resp.headers.items()},
+                    )
             except urllib.error.HTTPError as exc:
                 raw = _safe_read(exc)
                 status = exc.code
@@ -89,14 +122,30 @@ class Transport:
                     time.sleep(self._retry_delay(attempt, exc.headers))
                     attempt += 1
                     continue
+                err = _error_from_response(status, raw)
+                # A 409 IDEMPOTENCY_KEY_PROCESSING means the first request with
+                # this key is still in flight; honour Retry-After and retry —
+                # the next attempt hits the replay path and returns the task.
+                if (
+                    has_idempotency_key
+                    and status == 409
+                    and err.error_code == IDEMPOTENCY_PROCESSING_CODE
+                    and attempt < self.max_retries
+                ):
+                    time.sleep(self._retry_delay(attempt, exc.headers))
+                    attempt += 1
+                    continue
                 # The HTTPError itself is noise; the typed APIError carries detail.
-                raise _error_from_response(status, raw) from None
+                raise err from None
             except OSError as exc:
                 # OSError covers URLError, socket.timeout and TimeoutError — any
                 # of which urllib may raise on connect/read timeouts or TLS/reset.
-                # Only retry network failures for idempotent methods; a retried
-                # POST could silently create a second task.
-                if method.upper() in IDEMPOTENT_METHODS and attempt < self.max_retries:
+                # Only retry network failures for idempotent methods (or a POST
+                # carrying an Idempotency-Key); a blindly retried POST could
+                # silently create a second task.
+                if (
+                    method.upper() in IDEMPOTENT_METHODS or has_idempotency_key
+                ) and attempt < self.max_retries:
                     time.sleep(self._retry_delay(attempt, None))
                     attempt += 1
                     continue
