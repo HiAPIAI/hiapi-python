@@ -174,3 +174,154 @@ def test_retries_on_503_then_succeeds(client, server):
     created = client.tasks.create(model="m", input={"prompt": "x"})
     assert created.task_id == "tk-hiapi-abc123"
     assert len(server.requests) == 2  # one retry
+
+
+# -- route parameter ----------------------------------------------------------
+
+
+def test_create_with_route_sends_route_field(client, server):
+    server.set_responder(lambda *a: OK_CREATE)
+    client.tasks.create(
+        model="gpt-image-2/text-to-image", input={"prompt": "x"}, route="pro"
+    )
+    body = json.loads(server.requests[-1]["body"])
+    assert body["route"] == "pro"
+    assert body["model"] == "gpt-image-2/text-to-image"
+
+
+def test_create_without_route_omits_field(client, server):
+    server.set_responder(lambda *a: OK_CREATE)
+    client.tasks.create(model="m", input={"prompt": "x"})
+    body = json.loads(server.requests[-1]["body"])
+    assert "route" not in body
+
+
+def test_retrieve_parses_route_echo(client, server):
+    server.set_responder(
+        lambda *a: detail("success", route="pro", model="gpt-image-2/text-to-image@pro")
+    )
+    task = client.tasks.retrieve("tk-hiapi-abc123")
+    assert task.route == "pro"
+    assert task.model == "gpt-image-2/text-to-image@pro"
+
+
+def test_retrieve_route_absent_is_none(client, server):
+    server.set_responder(lambda *a: detail("success"))
+    assert client.tasks.retrieve("tk-hiapi-abc123").route is None
+
+
+def test_run_forwards_route_and_idempotency_key(client, server):
+    server.set_responder(sequence([OK_CREATE, detail("success")]))
+    client.tasks.run(
+        model="m",
+        input={"prompt": "x"},
+        route="ext",
+        idempotency_key="job-42",
+        poll_interval=0.01,
+    )
+    create_req = server.requests[0]
+    assert json.loads(create_req["body"])["route"] == "ext"
+    assert create_req["headers"]["Idempotency-Key"] == "job-42"
+
+
+# -- Idempotency-Key ----------------------------------------------------------
+
+
+def test_create_sends_idempotency_key_header(client, server):
+    server.set_responder(lambda *a: OK_CREATE)
+    created = client.tasks.create(
+        model="m", input={"prompt": "x"}, idempotency_key="wf-1:submit"
+    )
+    assert server.requests[-1]["headers"]["Idempotency-Key"] == "wf-1:submit"
+    assert created.idempotent_replay is False
+
+
+def test_create_without_key_sends_no_header(client, server):
+    server.set_responder(lambda *a: OK_CREATE)
+    client.tasks.create(model="m", input={"prompt": "x"})
+    assert "Idempotency-Key" not in server.requests[-1]["headers"]
+
+
+def test_create_replay_sets_idempotent_replay(client, server):
+    server.set_responder(
+        lambda *a: (200, OK_CREATE[1], {"Idempotent-Replay": "true"})
+    )
+    created = client.tasks.create(
+        model="m", input={"prompt": "x"}, idempotency_key="wf-1:submit"
+    )
+    assert created.idempotent_replay is True
+    assert created.task_id == "tk-hiapi-abc123"
+
+
+def test_create_mismatch_raises_not_retryable(client, server):
+    from hiapi import IdempotencyKeyMismatchError
+
+    server.set_responder(
+        lambda *a: (
+            422,
+            {
+                "code": 422,
+                "error_code": "IDEMPOTENCY_KEY_MISMATCH",
+                "message": "Idempotency-Key was already used with a different request body",
+                "data": None,
+            },
+        )
+    )
+    with pytest.raises(IdempotencyKeyMismatchError) as exc:
+        client.tasks.create(model="m", input={"prompt": "x"}, idempotency_key="k")
+    assert exc.value.status == 422
+    assert len(server.requests) == 1  # 422 must NOT be retried
+
+
+def test_create_409_processing_retries_then_replays(client, server):
+    processing = (
+        409,
+        {
+            "code": 409,
+            "error_code": "IDEMPOTENCY_KEY_PROCESSING",
+            "message": "a request with this Idempotency-Key is still in progress",
+            "data": None,
+        },
+        {"Retry-After": "0"},
+    )
+    replay = (200, OK_CREATE[1], {"Idempotent-Replay": "true"})
+    server.set_responder(sequence([processing, replay]))
+    created = client.tasks.create(
+        model="m", input={"prompt": "x"}, idempotency_key="k"
+    )
+    assert created.idempotent_replay is True
+    assert len(server.requests) == 2  # one automatic 409 retry
+
+
+def test_create_409_processing_exhausts_retries_and_raises(client, server):
+    from hiapi import IdempotencyKeyProcessingError
+
+    processing = (
+        409,
+        {
+            "code": 409,
+            "error_code": "IDEMPOTENCY_KEY_PROCESSING",
+            "message": "still in progress",
+            "data": None,
+        },
+        {"Retry-After": "0"},
+    )
+    server.set_responder(lambda *a: processing)
+    with pytest.raises(IdempotencyKeyProcessingError) as exc:
+        client.tasks.create(model="m", input={"prompt": "x"}, idempotency_key="k")
+    assert exc.value.status == 409
+    # initial attempt + max_retries (1 in the fixture)
+    assert len(server.requests) == 2
+
+
+def test_create_409_without_key_is_not_retried(client, server):
+    # A 409 on a keyless POST is not the idempotency-processing contract; it
+    # must surface immediately rather than being retried.
+    from hiapi import APIError
+
+    server.set_responder(
+        lambda *a: (409, {"code": 409, "message": "conflict", "data": None})
+    )
+    with pytest.raises(APIError):
+        client.tasks.create(model="m", input={"prompt": "x"})
+    assert len(server.requests) == 1

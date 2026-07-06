@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from ._transport import Transport
 from .errors import HiAPIError
@@ -71,5 +71,21 @@ class HiAPI:
         *,
         body: Optional[Dict[str, Any]] = None,
         params: Optional[Dict[str, Any]] = None,
+        extra_headers: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
-        return self._transport.request(method, path, body=body, params=params)
+        return self._transport.request(
+            method, path, body=body, params=params, extra_headers=extra_headers
+        )
+
+    def _request_with_headers(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: Optional[Dict[str, Any]] = None,
+        params: Optional[Dict[str, Any]] = None,
+        extra_headers: Optional[Dict[str, str]] = None,
+    ) -> Tuple[Dict[str, Any], Dict[str, str]]:
+        return self._transport.request_with_headers(
+            method, path, body=body, params=params, extra_headers=extra_headers
+        )
