@@ -74,6 +74,38 @@ def test_retry_delay_clamps_negative_retry_after():
     assert t._retry_delay(0, Headers()) == 0.0
 
 
+def test_retry_delay_honours_http_date():
+    # Retry-After may be an HTTP-date, not just numeric seconds (RFC 7231).
+    from datetime import datetime, timedelta, timezone
+    from email.utils import format_datetime
+
+    t = Transport("sk", "https://x/v1", timeout=5, max_retries=2)
+    future = datetime.now(timezone.utc) + timedelta(seconds=30)
+
+    class Headers:
+        def get(self, name):
+            return format_datetime(future) if name == "Retry-After" else None
+
+    # ~30s until the date; allow slack for clock/rounding. A numeric-only parser
+    # would instead fall back to exponential backoff (0.5s on attempt 0).
+    delay = t._retry_delay(0, Headers())
+    assert 25.0 <= delay <= 31.0
+
+
+def test_retry_delay_past_http_date_clamped_to_zero():
+    from datetime import datetime, timedelta, timezone
+    from email.utils import format_datetime
+
+    t = Transport("sk", "https://x/v1", timeout=5, max_retries=2)
+    past = datetime.now(timezone.utc) - timedelta(seconds=60)
+
+    class Headers:
+        def get(self, name):
+            return format_datetime(past) if name == "Retry-After" else None
+
+    assert t._retry_delay(0, Headers()) == 0.0
+
+
 def test_post_not_retried_on_network_error():
     # A non-idempotent POST must not be retried — it might have created a task.
     calls = []
@@ -95,6 +127,23 @@ def test_get_retried_on_network_error():
     with pytest.raises(APIConnectionError):
         t.request("GET", "/tasks")
     assert len(calls) == 3  # initial + 2 retries
+
+
+def test_post_retried_on_network_error_with_idempotency_key():
+    # The mirror image of test_post_not_retried_on_network_error: a POST carrying
+    # an Idempotency-Key IS safe to retry on a network error, because the server
+    # collapses duplicate key+body into the first task (no double-charge).
+    calls = []
+    t = Transport(
+        "sk", "https://x/v1", timeout=1, max_retries=2,
+        opener=_FakeOpener(URLError("boom"), calls),
+    )
+    with pytest.raises(APIConnectionError):
+        t.request(
+            "POST", "/tasks", body={"model": "m", "input": {}},
+            extra_headers={"Idempotency-Key": "k-1"},
+        )
+    assert len(calls) == 3  # initial + 2 retries — the key makes the POST retriable
 
 
 def test_socket_timeout_wrapped_as_connection_error():

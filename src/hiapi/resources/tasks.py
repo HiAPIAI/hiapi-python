@@ -52,7 +52,11 @@ class Tasks:
         :class:`~hiapi.errors.IdempotencyKeyMismatchError`.
         """
         body: Dict[str, Any] = {"model": model, "input": input}
-        if route is not None:
+        # An empty string means "no route" — omit it, matching the Go/Java SDKs
+        # and the server's "'' ≡ absent ≡ default" rule. Keeping the field out
+        # also keeps the idempotency hash (over the raw body) identical whether
+        # the caller passes route="" or omits it.
+        if route:
             body["route"] = route
         if callback is not None:
             body["callback"] = callback

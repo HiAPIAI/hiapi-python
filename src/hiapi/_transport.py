@@ -12,6 +12,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any, Dict, Optional, Tuple
 
 from ._version import __version__
@@ -173,8 +175,30 @@ class Transport:
                     # time.sleep() raise and break the retry loop.
                     return max(0.0, min(float(retry_after), _MAX_RETRY_AFTER))
                 except (TypeError, ValueError):
-                    pass  # HTTP-date form: fall back to backoff
+                    # HTTP-date form, e.g. "Wed, 21 Oct 2026 07:28:00 GMT" —
+                    # honour it like the Go SDK rather than falling back.
+                    delay = _http_date_delay(retry_after)
+                    if delay is not None:
+                        return max(0.0, min(delay, _MAX_RETRY_AFTER))
         return float(min(0.5 * (2 ** attempt), _MAX_BACKOFF))
+
+
+def _http_date_delay(value: str) -> Optional[float]:
+    """Seconds from now until an HTTP-date ``Retry-After``, or ``None``.
+
+    The ``Retry-After`` header may be numeric seconds or an HTTP-date
+    (RFC 7231), e.g. ``"Wed, 21 Oct 2026 07:28:00 GMT"``. The caller clamps the
+    returned value to a sane bound.
+    """
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if when is None:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return (when - datetime.now(timezone.utc)).total_seconds()
 
 
 def _normalize_base_url(base_url: str) -> str:
