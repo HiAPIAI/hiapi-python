@@ -196,6 +196,16 @@ def test_create_without_route_omits_field(client, server):
     assert "route" not in body
 
 
+def test_create_empty_route_omitted(client, server):
+    # An empty route means "default" — it must be omitted, not sent as "", so
+    # the wire body (and thus the idempotency hash) matches the Go/Java SDKs and
+    # a route="" call is byte-identical to omitting route entirely.
+    server.set_responder(lambda *a: OK_CREATE)
+    client.tasks.create(model="m", input={"prompt": "x"}, route="")
+    body = json.loads(server.requests[-1]["body"])
+    assert "route" not in body
+
+
 def test_retrieve_parses_route_echo(client, server):
     server.set_responder(
         lambda *a: detail("success", route="pro", model="gpt-image-2/text-to-image@pro")
