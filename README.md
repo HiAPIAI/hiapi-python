@@ -5,7 +5,7 @@ Zero-dependency Python client for the [HiAPI](https://hiapi.ai) **unified async 
 - **Zero runtime dependencies.** Standard library only (`urllib`, `json`, `hmac`).
 - **One-call workflow.** `client.tasks.run(...)` submits and waits for you.
 - **Typed.** Dataclasses throughout, ships `py.typed`.
-- **Webhook verification.** HMAC-SHA256 signature + replay check, built in.
+- **Webhook verification.** HMAC-SHA256 signature + timestamp freshness check, built in (still deduplicate deliveries by task id).
 
 > For OpenAI-compatible chat/image endpoints, keep using the `openai` library with
 > `base_url="https://api.hiapi.ai/v1"`. This SDK focuses on what the OpenAI client
@@ -96,8 +96,8 @@ if created.idempotent_replay:
 ```
 
 With a key set, the SDK also retries the POST on network errors and
-automatically waits out `409 IDEMPOTENCY_KEY_PROCESSING` (the first request is
-still in flight). Reusing a key with a **different** body raises
+retries `409 IDEMPOTENCY_KEY_PROCESSING` (the first request is
+still in flight) up to the retry limit (default 2), honouring `Retry-After` capped at 60s. Reusing a key with a **different** body raises
 `IdempotencyKeyMismatchError` — that's a key-construction bug, not retryable.
 
 ## Webhooks
@@ -111,6 +111,7 @@ from flask import Flask, request
 from hiapi import HiAPI, WebhookVerificationError
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024  # 1 MiB — reject oversized bodies before reading
 client = HiAPI(api_key="sk-...", webhook_secret="whsec_...")
 
 @app.post("/hiapi/callback")
@@ -135,10 +136,12 @@ by `task.task_id` (e.g. an insert that no-ops on conflict) before acting on the 
 | `NotFoundError` | 404 — unknown task or not yours |
 | `InvalidRequestError` | `INVALID_REQUEST` — fix the request |
 | `ModelUnavailableError` | `MODEL_UNAVAILABLE` — retry or switch model |
+| `TaskFailedError` | `TASK_FAILED` — the submission was rejected synchronously (distinct from `TaskFailed` below) |
 | `TaskTimeoutError` / `StorageUnavailableError` | retryable upstream errors |
 | `ServiceUnavailableError` | 503 — platform busy (auto-retried) |
 | `IdempotencyKeyProcessingError` | 409 — same key still in flight (auto-retried; retryable) |
 | `IdempotencyKeyMismatchError` | 422 — key reused with a different body (**not** retryable) |
+| `APIError` | any other non-2xx response (base class — e.g. `402`, `403`; carries status and body) |
 | `APIConnectionError` | network failure (auto-retried for reads only — **not** a keyless `create()`) |
 | `TaskFailed` | a polled task ended in `status=fail` |
 | `PollTimeout` | `run()`/`wait()` exceeded its timeout |
