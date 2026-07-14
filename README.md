@@ -38,7 +38,14 @@ for out in task.output:
 
 `run()` blocks until the task reaches a terminal state. It raises `TaskFailed`
 if the task fails and `PollTimeout` if it doesn't finish within `timeout`
-(default 600s).
+(default 600s). A poll timeout does **not** cancel the task — it may still
+finish (and bill) later; take `task_id` from the `PollTimeout` exception and
+`retrieve()` it instead of submitting the same request again.
+
+Output URLs are **temporary** — they expire about 7 days after creation (each
+output carries `expire_at`). To keep an output long-term, promote it to
+persistent storage before it expires — see the
+[Output Storage docs](https://docs.hiapi.ai/storage/).
 
 ## Lower-level control
 
@@ -125,8 +132,10 @@ def callback():
     return "", 200  # ack with 2xx; HiAPI retries non-2xx
 ```
 
-Callbacks are delivered **at least once** and can arrive concurrently — deduplicate
-by `task.task_id` (e.g. an insert that no-ops on conflict) before acting on the event.
+Callbacks are delivered **at least once** and can arrive concurrently — make your
+handler idempotent (e.g. upsert your own record keyed by `task.task_id`) and return
+2xx only after processing succeeds. Duplicates are then harmless, and a failed or
+crashed handler is simply redelivered.
 
 ## Errors
 
