@@ -9,7 +9,7 @@ Zero-dependency Python client for the [HiAPI](https://hiapi.ai) **unified async 
 
 > For OpenAI-compatible chat/image endpoints, keep using the `openai` library with
 > `base_url="https://api.hiapi.ai/v1"`. This SDK focuses on what the OpenAI client
-> can't do: the asynchronous **submit → poll → download** lifecycle.
+> can't do: the asynchronous **submit → poll → retrieve** lifecycle (results come back as output URLs).
 
 ## Install
 
