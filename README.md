@@ -61,28 +61,29 @@ page = client.tasks.list(page=1, size=20)       # newest first
 
 ## Model routes
 
-Some models expose multiple routes (e.g. `pro`, `ext`) with different pricing or
+Some models expose multiple routes (e.g. `ext`) with different pricing or
 upstream capacity. Pass `route` instead of writing the `model@route` suffix:
 
 ```python
 created = client.tasks.create(
     model="gpt-image-2/text-to-image",
-    route="pro",                        # preferred over model="...@pro"
+    route="ext",                        # preferred over model="...@ext"
     input={"prompt": "..."},
 )
 ```
 
 Omitting `route` (or passing `"default"`) uses the model's default route. An
 unknown route fails fast with a 400 whose message lists the available routes.
-The legacy `model="x@pro"` spelling keeps working. When a task was submitted
+The legacy `model="x@ext"` spelling keeps working. When a task was submitted
 with `route`, its detail echoes `task.route` and `task.model` holds the
-resolved full name (`x@pro`).
+resolved full name (`x@ext`).
 
 ## Idempotent retries
 
 Pass `idempotency_key` (sent as the `Idempotency-Key` header, ≤255 bytes) to
-make task submission safe to retry — same key + same body always returns the
-first task instead of creating and billing a new one:
+make task submission safe to retry — retrying the same key + same body within
+about 24 hours returns the first task instead of creating and billing a new one
+(after that the key is cleaned up and the same request creates a new task):
 
 ```python
 created = client.tasks.create(
@@ -118,12 +119,13 @@ def callback():
         task = client.webhooks.verify(request.get_data(), request.headers)
     except WebhookVerificationError:
         return "", 400
-    if task.succeeded:
+    if task.succeeded and task.output:
         print(task.output[0].url)
     return "", 200  # ack with 2xx; HiAPI retries non-2xx
 ```
 
-Callbacks are delivered **at least once** — deduplicate by `task.task_id`.
+Callbacks are delivered **at least once** and can arrive concurrently — deduplicate
+by `task.task_id` (e.g. an insert that no-ops on conflict) before acting on the event.
 
 ## Errors
 
