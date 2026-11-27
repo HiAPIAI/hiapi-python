@@ -10,7 +10,7 @@ from .errors import HiAPIError
 from .resources import Tasks
 from .webhooks import Webhooks
 
-DEFAULT_BASE_URL = "https://api.hiapi.ai/v1"
+DEFAULT_BASE_URL = "https://api.hiapi.sh/v1"
 DEFAULT_TIMEOUT = 60.0
 DEFAULT_MAX_RETRIES = 2
 
@@ -21,7 +21,8 @@ class HiAPI:
     Args:
         api_key: Account API key (``sk-...``). Falls back to the ``HIAPI_API_KEY``
             environment variable.
-        base_url: API base URL, including the ``/v1`` prefix.
+        base_url: API base URL, including the ``/v1`` prefix. Falls back to the
+            ``HIAPI_BASE_URL`` environment variable, then the default.
         timeout: Per-request socket timeout in seconds.
         max_retries: Retries for 429/503 and network errors (exponential backoff).
         webhook_secret: Default signing key for ``client.webhooks.verify``;
@@ -33,7 +34,7 @@ class HiAPI:
 
         client = HiAPI(api_key="sk-...")
         task = client.tasks.run(
-            model="seedance-2-0",
+            model="seedance-2.0",
             input={"prompt": "a cyan glass data center", "resolution": "1080p"},
             on_update=lambda t: print(t.status),
         )
@@ -44,7 +45,7 @@ class HiAPI:
         self,
         api_key: Optional[str] = None,
         *,
-        base_url: str = DEFAULT_BASE_URL,
+        base_url: Optional[str] = None,
         timeout: float = DEFAULT_TIMEOUT,
         max_retries: int = DEFAULT_MAX_RETRIES,
         webhook_secret: Optional[str] = None,
@@ -56,8 +57,8 @@ class HiAPI:
                 "environment variable"
             )
         self.api_key = key
-        self.base_url = base_url
-        self._transport = Transport(key, base_url, timeout, max_retries)
+        self.base_url = base_url or os.environ.get("HIAPI_BASE_URL") or DEFAULT_BASE_URL
+        self._transport = Transport(key, self.base_url, timeout, max_retries)
 
         self.tasks = Tasks(self)
         self.webhooks = Webhooks(

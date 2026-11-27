@@ -204,7 +204,7 @@ def _http_date_delay(value: str) -> Optional[float]:
 def _normalize_base_url(base_url: str) -> str:
     """Strip trailing slashes and ensure the ``/v1`` version prefix is present.
 
-    Accepts both ``https://api.hiapi.ai`` and ``https://api.hiapi.ai/v1`` so a
+    Accepts both ``https://api.hiapi.sh`` and ``https://api.hiapi.sh/v1`` so a
     missing ``/v1`` doesn't silently send requests to the wrong path.
     """
     base = base_url.rstrip("/")
