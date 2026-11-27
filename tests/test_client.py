@@ -31,19 +31,19 @@ def test_missing_api_key_raises(monkeypatch):
 
 
 def test_base_url_trailing_slash_normalized():
-    t = Transport("sk", "https://api.hiapi.ai/v1/", timeout=5, max_retries=0)
-    assert t._build_url("/tasks", None) == "https://api.hiapi.ai/v1/tasks"
+    t = Transport("sk", "https://api.hiapi.sh/v1/", timeout=5, max_retries=0)
+    assert t._build_url("/tasks", None) == "https://api.hiapi.sh/v1/tasks"
 
 
 def test_base_url_without_v1_gets_prefixed():
-    t = Transport("sk", "https://api.hiapi.ai", timeout=5, max_retries=0)
-    assert t._build_url("/tasks", None) == "https://api.hiapi.ai/v1/tasks"
+    t = Transport("sk", "https://api.hiapi.sh", timeout=5, max_retries=0)
+    assert t._build_url("/tasks", None) == "https://api.hiapi.sh/v1/tasks"
 
 
 def test_build_url_skips_none_params():
-    t = Transport("sk", "https://api.hiapi.ai/v1", timeout=5, max_retries=0)
+    t = Transport("sk", "https://api.hiapi.sh/v1", timeout=5, max_retries=0)
     url = t._build_url("/tasks", {"page": 1, "size": None})
-    assert url == "https://api.hiapi.ai/v1/tasks?page=1"
+    assert url == "https://api.hiapi.sh/v1/tasks?page=1"
 
 
 def test_retry_delay_honours_retry_after():
@@ -156,3 +156,13 @@ def test_socket_timeout_wrapped_as_connection_error():
     )
     with pytest.raises(APIConnectionError):
         t.request("GET", "/tasks")
+
+
+def test_base_url_env_priority(monkeypatch):
+    monkeypatch.setenv("HIAPI_BASE_URL", "https://env.example.com/v1")
+    assert HiAPI(api_key="sk").base_url == "https://env.example.com/v1"
+    assert HiAPI(api_key="sk", base_url="https://arg.example.com/v1").base_url == (
+        "https://arg.example.com/v1"
+    )
+    monkeypatch.delenv("HIAPI_BASE_URL")
+    assert HiAPI(api_key="sk").base_url == "https://api.hiapi.sh/v1"

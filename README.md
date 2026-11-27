@@ -8,7 +8,7 @@ Zero-dependency Python client for the [HiAPI](https://hiapi.ai) **unified async 
 - **Webhook verification.** HMAC-SHA256 signature + timestamp freshness check, built in (still deduplicate deliveries by task id).
 
 > For OpenAI-compatible chat/image endpoints, keep using the `openai` library with
-> `base_url="https://api.hiapi.ai/v1"`. This SDK focuses on what the OpenAI client
+> `base_url="https://api.hiapi.sh/v1"`. This SDK focuses on what the OpenAI client
 > can't do: the asynchronous **submit → poll → retrieve** lifecycle (results come back as output URLs).
 
 ## Install
@@ -27,7 +27,7 @@ from hiapi import HiAPI
 client = HiAPI(api_key="sk-...")  # or set HIAPI_API_KEY
 
 task = client.tasks.run(
-    model="seedance-2-0",
+    model="seedance-2.0",
     input={"prompt": "a cyan glass data center entrance", "resolution": "1080p"},
     on_update=lambda t: print("status:", t.status),
 )
@@ -51,7 +51,7 @@ persistent storage before it expires — see the
 
 ```python
 created = client.tasks.create(
-    model="seedance-2-0",
+    model="seedance-2.0",
     input={"prompt": "...", "resolution": "720p"},
     callback={"url": "https://your-app.com/hiapi/callback", "when": "final"},
 )
@@ -94,7 +94,7 @@ about 24 hours returns the first task instead of creating and billing a new one
 
 ```python
 created = client.tasks.create(
-    model="seedance-2-0",
+    model="seedance-2.0",
     input={"prompt": "..."},
     idempotency_key="order-8472:video",   # a stable key you derive per job
 )
@@ -172,7 +172,7 @@ anything automated, submit with an `idempotency_key` so the retry is safe by des
 ```python
 HiAPI(
     api_key=None,                       # falls back to HIAPI_API_KEY
-    base_url="https://api.hiapi.ai/v1",
+    base_url="https://api.hiapi.sh/v1",   # falls back to HIAPI_BASE_URL
     timeout=60.0,                       # per-request seconds
     max_retries=2,
     webhook_secret=None,                # falls back to HIAPI_WEBHOOK_SECRET

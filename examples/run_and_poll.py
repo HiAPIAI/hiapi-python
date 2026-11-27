@@ -9,7 +9,7 @@ client = HiAPI()  # reads HIAPI_API_KEY
 
 try:
     task = client.tasks.run(
-        model="seedance-2-0",
+        model="seedance-2.0",
         input={"prompt": "a cyan glass data center entrance", "resolution": "1080p"},
         on_update=lambda t: print("status:", t.status),
         poll_interval=3.0,

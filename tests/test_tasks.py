@@ -17,14 +17,14 @@ OK_CREATE = (200, {"code": 200, "message": "success", "data": {"taskId": "tk-hia
 
 
 def detail(status, **extra):
-    data = {"taskId": "tk-hiapi-abc123", "model": "seedance-2-0", "status": status}
+    data = {"taskId": "tk-hiapi-abc123", "model": "seedance-2.0", "status": status}
     data.update(extra)
     return (200, {"code": 200, "message": "success", "data": data})
 
 
 def test_create_returns_task_id(client, server):
     server.set_responder(lambda *a: OK_CREATE)
-    created = client.tasks.create(model="seedance-2-0", input={"prompt": "hi"})
+    created = client.tasks.create(model="seedance-2.0", input={"prompt": "hi"})
     assert created.task_id == "tk-hiapi-abc123"
 
     req = server.requests[-1]
@@ -32,7 +32,7 @@ def test_create_returns_task_id(client, server):
     assert req["path"] == "/v1/tasks"
     assert req["headers"]["Authorization"] == "Bearer sk-test"
     body = json.loads(req["body"])
-    assert body == {"model": "seedance-2-0", "input": {"prompt": "hi"}}
+    assert body == {"model": "seedance-2.0", "input": {"prompt": "hi"}}
 
 
 def test_create_with_callback_includes_callback(client, server):
@@ -137,7 +137,7 @@ def test_run_creates_then_waits(client, server):
         sequence([OK_CREATE, detail("handling"), detail("success")])
     )
     task = client.tasks.run(
-        model="seedance-2-0", input={"prompt": "hi"}, poll_interval=0.01
+        model="seedance-2.0", input={"prompt": "hi"}, poll_interval=0.01
     )
     assert task.succeeded
     assert server.requests[0]["method"] == "POST"

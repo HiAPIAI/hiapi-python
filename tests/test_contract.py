@@ -17,7 +17,7 @@ DETAIL_SUCCESS = {
     "message": "success",
     "data": {
         "taskId": "tk-hiapi-abc123",
-        "model": "seedance-2-0",
+        "model": "seedance-2.0",
         "status": "success",
         "created": 1777800499,
         "completed": 1777800799,
@@ -34,7 +34,7 @@ DETAIL_FAIL = {
     "message": "success",
     "data": {
         "taskId": "tk-hiapi-abc123",
-        "model": "seedance-2-0",
+        "model": "seedance-2.0",
         "status": "fail",
         "error": {"code": "TASK_FAILED", "message": "upstream rejected the prompt"},
     },
@@ -51,7 +51,7 @@ def test_detail_success_contract():
     task = Task.from_dict(DETAIL_SUCCESS["data"])
     assert task.status == "success"
     assert task.is_terminal and task.succeeded
-    assert task.model == "seedance-2-0"
+    assert task.model == "seedance-2.0"
     assert task.created_at == 1777800499
     assert task.completed_at == 1777800799
     assert task.storage == "temp"

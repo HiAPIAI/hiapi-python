@@ -6,7 +6,7 @@ Quick start::
 
     client = HiAPI(api_key="sk-...")  # or set HIAPI_API_KEY
     task = client.tasks.run(
-        model="seedance-2-0",
+        model="seedance-2.0",
         input={"prompt": "...", "resolution": "1080p"},
     )
     print(task.output[0].url)
